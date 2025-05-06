@@ -1,98 +1,87 @@
+import asyncio
 from aiogram import Bot, Dispatcher, types
-from aiogram.enums import ParseMode
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, CallbackQuery
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.client.default import DefaultBotProperties
+from aiogram.types import Message
+from aiogram.filters import CommandStart
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
-from datetime import datetime, timedelta, time as dt_time
-import asyncio
+from datetime import datetime, timedelta
 import logging
 import os
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-dp = Dispatcher(storage=MemoryStorage())
+API_TOKEN = os.getenv("BOT_TOKEN")
+
+bot = Bot(token=API_TOKEN, default=types.DefaultBotProperties(parse_mode="HTML"))
+dp = Dispatcher()
 scheduler = AsyncIOScheduler()
 
-# Состояния шагов внутри дня
-class StepState(StatesGroup):
-    waiting_for_step = State()
+# Хранение прогресса пользователей
+user_progress = {}
+last_step_time = {}
 
-# Данные маршрутов на 7 дней
-days = {
-    f"day_{i}": [
-        f"День {i}: Шаг 1 — практика осознанности",
-        f"День {i}: Шаг 2 — телесная практика",
-        f"День {i}: Шаг 3 — вечерняя рефлексия"
-    ] for i in range(1, 8)
+# 7-дневный маршрут
+routes = {
+    1: ["Добро пожаловать в GlowMe 🌟", "Шаг 1: Напиши, чего ты хочешь прямо сейчас."],
+    2: ["Шаг 2: Дыхание живости", "Сделай 3 вдоха с ощущением тела. Где ты сейчас?"],
+    3: ["Шаг 3: Твоё тело — не враг", "Положи руку на грудь. Побудь с этим ощущением 1 минуту."],
+    4: ["Шаг 4: Я имею право хотеть", "Что ты хочешь почувствовать в ближайшие 24 часа?"],
+    5: ["Шаг 5: Отпускание контроля", "Напиши: что сегодня можно отпустить?"],
+    6: ["Шаг 6: Границы и свобода", "Назови одно «нет» и одно «да» себе сегодня."],
+    7: ["Шаг 7: Ритуал завершения", "Что ты хочешь взять с собой с этого пути?"]
 }
 
-user_progress = {}
+# Проверка времени — не отправлять ночью
+def is_daytime():
+    now = datetime.now().time()
+    return now >= datetime.strptime("08:00", "%H:%M").time() and now <= datetime.strptime("22:00", "%H:%M").time()
 
-# Кнопка выбора дня
-@dp.message(commands=["start"])
-async def cmd_start(message: Message, state: FSMContext):
-    builder = InlineKeyboardBuilder()
-    for i in range(1, 8):
-        builder.button(text=f"День {i}", callback_data=f"day_{i}_step_0")
-    await message.answer("Выбери день:", reply_markup=builder.as_markup())
+# Напоминание через 6 часов
+async def send_reminder(user_id, day):
+    if user_progress.get(user_id, 0) == day:
+        if is_daytime():
+            await bot.send_message(user_id, f"✨ Напоминание: продолжим День {day}?")
+        # Повторное напоминание через 6 часов
+        schedule_reminder(user_id, day)
 
-# Обработка нажатия на шаг дня
-@dp.callback_query()
-async def handle_step(callback: CallbackQuery, state: FSMContext):
-    data = callback.data
-    day_key, _, step_num = data.split('_')
-    step_num = int(step_num)
-    user_id = callback.from_user.id
+def schedule_reminder(user_id, day):
+    reminder_time = datetime.now() + timedelta(hours=6)
+    scheduler.add_job(send_reminder, trigger=DateTrigger(reminder_time), args=[user_id, day])
 
-    # Проверка, завершил ли предыдущий шаг
-    if step_num > 0 and user_progress.get(user_id, {}).get(day_key, -1) < step_num - 1:
-        await callback.answer("Сначала заверши предыдущий шаг.", show_alert=True)
+# Обработка /start
+@dp.message(CommandStart())
+async def cmd_start(message: Message):
+    user_id = message.from_user.id
+    user_progress[user_id] = 1
+    last_step_time[user_id] = datetime.now()
+    day = 1
+    for step in routes[day]:
+        await message.answer(step)
+    schedule_reminder(user_id, day)
+
+# Обработка любого текста пользователя как ответ на текущий шаг
+@dp.message()
+async def handle_response(message: Message):
+    user_id = message.from_user.id
+    current_day = user_progress.get(user_id, 1)
+    last_step_time[user_id] = datetime.now()
+    
+    # Завершение маршрута
+    if current_day >= 7:
+        await message.answer("Ты прошла весь 7-дневный маршрут 💛")
         return
 
-    steps = days[day_key]
-    if step_num < len(steps):
-        await callback.message.answer(steps[step_num])
-        await state.set_state(StepState.waiting_for_step)
-        await state.update_data(day_key=day_key, step_num=step_num)
-        user_progress.setdefault(user_id, {})[day_key] = step_num
+    # Переход к следующему дню
+    next_day = current_day + 1
+    user_progress[user_id] = next_day
+    for step in routes[next_day]:
+        await message.answer(step)
+    schedule_reminder(user_id, next_day)
 
-        # Планируем напоминание через 6 часов, если это не ночь
-        now = datetime.now()
-        next_time = now + timedelta(hours=6)
-        if not (22 <= next_time.hour or next_time.hour < 8):
-            scheduler.add_job(
-                send_reminder,
-                trigger=DateTrigger(run_date=next_time),
-                args=[user_id, day_key, step_num]
-            )
-
-        # Кнопка следующего шага, если не последний
-        if step_num + 1 < len(steps):
-            builder = InlineKeyboardBuilder()
-            builder.button(
-                text=f"Перейти к шагу {step_num + 2}",
-                callback_data=f"{day_key}_step_{step_num + 1}"
-            )
-            await callback.message.answer("Когда будешь готов(а), переходи к следующему шагу:", reply_markup=builder.as_markup())
-    else:
-        await callback.message.answer("Все шаги на сегодня пройдены ✨")
-
-# Напоминание
-async def send_reminder(user_id: int, day_key: str, step_num: int):
-    try:
-        await bot.send_message(user_id, f"Напоминание: ты не завершил(а) шаг {step_num + 1} дня {day_key[-1]}")
-    except Exception as e:
-        logging.warning(f"Не удалось отправить напоминание: {e}")
-
+# Запуск
 async def main():
+    logging.basicConfig(level=logging.INFO)
     scheduler.start()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
     asyncio.run(main())
+
