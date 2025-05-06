@@ -11,7 +11,7 @@ API_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
-WEBHOOK_HOST = "https://<your-service>.onrender.com"  # замените на адрес вашего Render сервиса
+WEBHOOK_HOST = "https://dashboard.render.com/web/srv-d0cbhuqdbo4c73dh7kng"  # замените на адрес вашего Render сервиса
 WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 WEBAPP_HOST = "0.0.0.0"
