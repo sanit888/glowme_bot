@@ -7,7 +7,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-API_TOKEN = "YOUR_BOT_TOKEN_HERE"
+API_TOKEN = "8085072986:AAGkWbFj_JKl9mrZwG99ixbF6M4R3Zsayw8"
 
 # Настройка логов
 logging.basicConfig(level=logging.INFO)
