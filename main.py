@@ -1,16 +1,18 @@
 import asyncio
+import os
+import logging
+from datetime import datetime, timedelta
+
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import Message
+from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
+from aiogram.client.default import DefaultBotProperties
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
-from datetime import datetime, timedelta
-import logging
-import os
 
 API_TOKEN = os.getenv("BOT_TOKEN")
 
-bot = Bot(token=API_TOKEN, default=types.DefaultBotProperties(parse_mode="HTML"))
+bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 scheduler = AsyncIOScheduler()
 
@@ -48,7 +50,7 @@ def schedule_reminder(user_id, day):
 
 # Обработка /start
 @dp.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: types.Message):
     user_id = message.from_user.id
     user_progress[user_id] = 1
     last_step_time[user_id] = datetime.now()
@@ -59,7 +61,7 @@ async def cmd_start(message: Message):
 
 # Обработка любого текста пользователя как ответ на текущий шаг
 @dp.message()
-async def handle_response(message: Message):
+async def handle_response(message: types.Message):
     user_id = message.from_user.id
     current_day = user_progress.get(user_id, 1)
     last_step_time[user_id] = datetime.now()
@@ -84,4 +86,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
